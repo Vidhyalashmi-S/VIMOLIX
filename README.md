@@ -2,9 +2,10 @@
 
 **Vimolix** is an interactive chemistry explorer that helps users learn about elements, compounds, drugs, alcohols and biomolecules through chemical properties, molecular identifiers, 2D structures and interactive 3D models.
 
-Developed by **Vidhyalashmi S**
-               B.Tech CSE (AI & ML)
-               SRM Institute of Science and Technology
+Developed by:
+- **Vidhyalashmi S**
+- B.Tech CSE (AI & ML)
+- SRM Institute of Science and Technology
                
 
 ## Features
