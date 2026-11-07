@@ -2,7 +2,10 @@
 
 **Vimolix** is an interactive chemistry explorer that helps users learn about elements, compounds, drugs, alcohols and biomolecules through chemical properties, molecular identifiers, 2D structures and interactive 3D models.
 
-Developed by **Vidhyalashmi S**, B.Tech CSE (AI & ML).
+Developed by **Vidhyalashmi S**
+               B.Tech CSE (AI & ML)
+               SRM Institute of Science and Technology
+               
 
 ## Features
 
@@ -28,25 +31,6 @@ Developed by **Vidhyalashmi S**, B.Tech CSE (AI & ML).
 Chemical data is retrieved live from [PubChem](https://pubchem.ncbi.nlm.nih.gov/) using its PUG-REST API.
 
 PubChem PUG-REST supports compound searches and property retrieval through URL-based requests. Common properties include molecular formula, molecular weight, SMILES, InChI, XLogP, TPSA and hydrogen-bond counts. [1][8]
-
-## Deployment
-
-### GitHub Pages
-
-1. Create a GitHub repository named `vimolix`.
-2. Upload `index.html`, `styles.css`, `app.js` and `README.md`.
-3. Go to **Settings → Pages**.
-4. Under **Build and deployment**, choose **Deploy from a branch**.
-5. Select `main` and `/ (root)`.
-6. Save. Your site will be available at:
-   `https://your-github-username.github.io/vimolix/`
-
-### Netlify or Vercel
-
-1. Push the repository to GitHub.
-2. Import the repository into Netlify or Vercel.
-3. Use the project root as the publish directory.
-4. Deploy. No build command is required.
 
 ## Important note
 
