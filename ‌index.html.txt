@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vimolix — Chemistry Explorer</title>
+  <meta name="description" content="Vimolix is an interactive chemistry explorer for elements, compounds, drugs, alcohols and biomolecules, powered by PubChem." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <header class="site-header">
+    <div class="brand">
+      <div class="logo">
+        <span class="atom"></span>
+        <span class="orbit"></span>
+      </div>
+      <div>
+        <h1>Vimolix</h1>
+        <p>Explore chemistry — elements, molecules, medicines and biomolecules</p>
+      </div>
+    </div>
+
+    <nav class="main-nav">
+      <a href="#search-section" class="nav-link active">Explore</a>
+      <a href="#quiz-section" class="nav-link">Quiz</a>
+      <a href="#assistant-section" class="nav-link">AI Assistant</a>
+      <a href="#about-section" class="nav-link">About</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-text">
+        <span class="badge">Powered by PubChem</span>
+        <h2>Search the molecular world</h2>
+        <p>
+          Discover chemical properties, molecular mass, bonds, SMILES notation,
+          2D structures and interactive 3D models for compounds, elements, drugs,
+          alcohols and biomolecules.
+        </p>
+
+        <form id="search-form" autocomplete="off">
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5A6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5Zm-6 0A4.5 4.5 0 1 1 14 9.5A4.5 4.5 0 0 1 9.5 14Z"/>
+            </svg>
+            <input
+              id="search-input"
+              type="text"
+              placeholder="Try: water, caffeine, aspirin, ethanol, glucose, DNA, iron..."
+              aria-label="Search a chemical compound, element, drug or biomolecule"
+            />
+            <button type="submit">Explore</button>
+          </div>
+          <p class="search-hint">
+            Search by common name, IUPAC name, PubChem CID, molecular formula or SMILES.
+          </p>
+        </form>
+
+        <div class="quick-searches">
+          <button data-query="Water">Water</button>
+          <button data-query="Caffeine">Caffeine</button>
+          <button data-query="Aspirin">Aspirin</button>
+          <button data-query="Ethanol">Ethanol</button>
+          <button data-query="Glucose">Glucose</button>
+          <button data-query="Iron">Iron</button>
+          <button data-query="Adrenaline">Adrenaline</button>
+          <button data-query="Paracetamol">Paracetamol</button>
+        </div>
+      </div>
+
+      <div class="hero-visual">
+        <div class="molecule-card">
+          <div class="molecule-orbit"></div>
+          <div class="molecule-core">C</div>
+          <span class="mini-atom a1">H</span>
+          <span class="mini-atom a2">O</span>
+          <span class="mini-atom a3">N</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="search-section" class="section">
+      <div id="status" class="status hidden"></div>
+
+      <div id="result-wrapper" class="hidden">
+        <div class="result-header">
+          <div>
+            <h2 id="compound-title">Compound</h2>
+            <p id="compound-iupac" class="muted"></p>
+          </div>
+          <a id="pubchem-link" class="pubchem-link" target="_blank" rel="noopener">View on PubChem</a>
+        </div>
+
+        <div class="result-grid">
+          <article class="card structure-card">
+            <h3>2D Structure</h3>
+            <div class="structure-frame">
+              <img id="structure-2d" alt="2D chemical structure" />
+            </div>
+          </article>
+
+          <article class="card model-card">
+            <h3>Interactive 3D Model</h3>
+            <div id="viewer-3d" class="viewer"></div>
+            <div class="viewer-controls">
+              <button id="spin-toggle">Toggle rotation</button>
+              <button id="reset-view">Reset view</button>
+              <span class="muted small">Drag to rotate • Scroll to zoom</span>
+            </div>
+          </article>
+
+          <article class="card properties-card">
+            <h3>Chemical Properties</h3>
+            <div id="properties-grid" class="property-grid"></div>
+          </article>
+
+          <article class="card identifiers-card">
+            <h3>Identifiers & Structure</h3>
+            <div id="identifiers" class="identifier-list"></div>
+          </article>
+
+          <article class="card insights-card">
+            <h3>Chemical Insights</h3>
+            <div id="insights" class="insight-list"></div>
+          </article>
+
+          <article class="card uses-card">
+            <h3>Industrial & Practical Uses</h3>
+            <div id="uses" class="use-list"></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="quiz-section" class="section">
+      <div class="section-head">
+        <h2>Chemistry Quiz</h2>
+        <p>Test your understanding of elements, bonding, functional groups and molecular structure.</p>
+      </div>
+
+      <div class="quiz-card card">
+        <div id="quiz-progress" class="quiz-progress"></div>
+        <h3 id="quiz-question"></h3>
+        <div id="quiz-options" class="quiz-options"></div>
+        <div id="quiz-feedback" class="quiz-feedback"></div>
+        <button id="quiz-next" class="primary-btn hidden">Next question</button>
+        <button id="quiz-restart" class="ghost-btn hidden">Restart quiz</button>
+      </div>
+    </section>
+
+    <section id="assistant-section" class="section">
+      <div class="section-head">
+        <h2>Vimo AI Assistant</h2>
+        <p>Ask chemistry questions or learn more about the molecule currently open in Vimolix.</p>
+      </div>
+
+      <div class="assistant-card card">
+        <div id="chat-window" class="chat-window">
+          <div class="chat-message ai">
+            <strong>Vimo:</strong> Hello! Search a molecule above, then ask me things like
+            “Explain caffeine simply”, “Why is ethanol soluble in water?”, or
+            “What does SMILES mean?”
+          </div>
+        </div>
+
+        <form id="chat-form" autocomplete="off">
+          <input id="chat-input" type="text" placeholder="Ask Vimo about chemistry..." aria-label="Ask the chemistry assistant" />
+          <button type="submit">Ask</button>
+        </form>
+
+        <p class="assistant-note">
+          Vimo provides educational explanations using the molecule data retrieved from PubChem.
+          Always verify critical medical, safety and laboratory information with authoritative sources.
+        </p>
+      </div>
+    </section>
+
+    <section id="about-section" class="section">
+      <div class="about-card card">
+        <h2>About Vimolix</h2>
+        <p>
+          Vimolix is an interactive chemistry-learning platform designed to make molecular
+          science visual, searchable and easy to understand. It brings together chemical
+          properties, structural representations, molecular identifiers and educational
+          explanations in one clean interface.
+        </p>
+        <div class="developer">
+          <p class="developed-by">Developed by</p>
+          <p class="developer-name">Vidhyalashmi S</p>
+          <p class="developer-program">B.Tech CSE (AI &amp; ML)</p>
+        </div>
+        <p class="data-note">
+          Chemical data is retrieved live from the PubChem database through its PUG-REST API.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p><strong>Vimolix</strong> — Developed by Vidhyalashmi S, B.Tech CSE (AI &amp; ML)</p>
+    <p>Data source: PubChem (NCBI). Educational use only.</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

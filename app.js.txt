@@ -1,0 +1,517 @@
+const PUBCHEM_BASE = "https://pubchem.ncbi.nlm.nih.gov/rest/pug";
+const PROPERTIES = [
+  "MolecularFormula",
+  "MolecularWeight",
+  "ExactMass",
+  "MonoisotopicMass",
+  "IUPACName",
+  "ConnectivitySMILES",
+  "SMILES",
+  "InChI",
+  "InChIKey",
+  "XLogP",
+  "TPSA",
+  "HBondDonorCount",
+  "HBondAcceptorCount",
+  "RotatableBondCount",
+  "Complexity",
+  "Charge",
+  "HeavyAtomCount"
+].join(",");
+
+const searchForm = document.getElementById("search-form");
+const searchInput = document.getElementById("search-input");
+const statusBox = document.getElementById("status");
+const resultWrapper = document.getElementById("result-wrapper");
+
+const titleEl = document.getElementById("compound-title");
+const iupacEl = document.getElementById("compound-iupac");
+const pubchemLink = document.getElementById("pubchem-link");
+const structureImage = document.getElementById("structure-2d");
+const viewerElement = document.getElementById("viewer-3d");
+const propertiesGrid = document.getElementById("properties-grid");
+const identifiersBox = document.getElementById("identifiers");
+const insightsBox = document.getElementById("insights");
+const usesBox = document.getElementById("uses");
+
+let viewer = null;
+let currentCompound = null;
+let spinEnabled = true;
+
+const FUNCTIONAL_GROUP_HINTS = [
+  { test: /(?=.*O)(?=.*H)/i, label: "May contain hydroxyl or oxygen-containing functionality" },
+  { test: /N/i, label: "Contains nitrogen; may participate in hydrogen bonding or biological interactions" },
+  { test: /C(=O)/i, label: "Contains a carbonyl group, common in aldehydes, ketones, acids and esters" },
+  { test: /c1ccccc1/i, label: "Contains an aromatic ring, often increasing structural stability" },
+  { test: /C#N/i, label: "Contains a nitrile group" },
+  { test: /S/i, label: "Contains sulfur; may influence odor, bonding or biological activity" },
+  { test: /F|Cl|Br|I/i, label: "Contains a halogen, which can affect reactivity and physical properties" }
+];
+
+const USE_LIBRARY = [
+  { match: /water|oxidane/i, uses: ["Solvent in laboratories and industry", "Essential biological solvent", "Cooling and cleaning applications"] },
+  { match: /ethanol|alcohol/i, uses: ["Solvent in pharmaceuticals and cosmetics", "Fuel and industrial feedstock", "Disinfectant formulations"] },
+  { match: /caffeine/i, uses: ["Beverages and stimulant products", "Pharmaceutical formulations", "Research into central nervous system activity"] },
+  { match: /aspirin|acetylsalicylic/i, uses: ["Analgesic and anti-inflammatory medicine", "Cardiovascular therapy under medical guidance", "Pharmaceutical research"] },
+  { match: /glucose|dextrose/i, uses: ["Energy source in biological systems", "Food and beverage industry", "Medical nutrition and diagnostics"] },
+  { match: /paracetamol|acetaminophen/i, uses: ["Pain relief and fever reduction", "Pharmaceutical manufacturing", "Clinical chemistry research"] },
+  { match: /iron/i, uses: ["Steel and construction materials", "Catalysts and metallurgy", "Biological oxygen transport in hemoglobin"] },
+  { match: /dna|rna|nucleic/i, uses: ["Genetics and biotechnology", "Medicine and diagnostics", "Molecular biology research"] },
+  { match: /protein|enzyme|amino/i, uses: ["Biotechnology and therapeutics", "Food and nutrition science", "Enzyme and biochemical research"] }
+];
+
+const QUIZ_QUESTIONS = [
+  {
+    question: "What does SMILES notation represent?",
+    options: [
+      "A text representation of a molecular structure",
+      "A laboratory safety rating",
+      "A unit of temperature",
+      "A type of chemical bond"
+    ],
+    answer: 0,
+    explanation: "SMILES stands for Simplified Molecular Input Line Entry System. It describes molecular structure using a compact text notation."
+  },
+  {
+    question: "Which particle determines an element’s atomic number?",
+    options: ["Neutron", "Electron", "Proton", "Photon"],
+    answer: 2,
+    explanation: "The number of protons in an atom’s nucleus defines its atomic number and identifies the element."
+  },
+  {
+    question: "What type of bond involves the sharing of electron pairs?",
+    options: ["Ionic bond", "Covalent bond", "Metallic bond", "Hydrogen bond"],
+    answer: 1,
+    explanation: "Covalent bonds form when atoms share one or more pairs of electrons."
+  },
+  {
+    question: "Which property describes a molecule’s tendency to dissolve in fats rather than water?",
+    options: ["Molecular weight", "XLogP", "TPSA", "Charge"],
+    answer: 1,
+    explanation: "XLogP estimates lipophilicity. Higher values generally indicate greater tendency to partition into lipid-like environments."
+  },
+  {
+    question: "What is the molecular formula of water?",
+    options: ["CO2", "H2O", "O2", "NaCl"],
+    answer: 1,
+    explanation: "Water contains two hydrogen atoms and one oxygen atom, giving the formula H2O."
+  },
+  {
+    question: "Which term describes the three-dimensional arrangement of atoms in a molecule?",
+    options: ["Isotope", "Conformation", "Molarity", "Valence"],
+    answer: 1,
+    explanation: "Conformation describes the spatial arrangement a molecule can adopt through rotation around single bonds."
+  },
+  {
+    question: "Hydrogen bond donors and acceptors are important because they influence:",
+    options: ["Color only", "Solubility and biological interactions", "Atomic number", "Neutron count"],
+    answer: 1,
+    explanation: "Hydrogen-bonding capacity strongly affects solubility, boiling point, crystal structure and interactions with biological targets."
+  },
+  {
+    question: "Which structure format can contain 3D atomic coordinates?",
+    options: ["PNG", "SDF", "CSV", "TXT"],
+    answer: 1,
+    explanation: "SDF, or Structure-Data File, can store molecular structures and atomic coordinates, including 3D conformer data."
+  }
+];
+
+function showStatus(message, isError = false) {
+  statusBox.textContent = message;
+  statusBox.classList.remove("hidden");
+  statusBox.classList.toggle("error", isError);
+}
+
+function hideStatus() {
+  statusBox.classList.add("hidden");
+}
+
+async function fetchJSON(url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`PubChem request failed (${response.status}). Try another spelling or identifier.`);
+  }
+  return response.json();
+}
+
+async function resolveCompound(query) {
+  const cleanQuery = query.trim();
+  if (!cleanQuery) throw new Error("Please enter a chemical name, formula, CID or SMILES.");
+
+  if (/^\d+$/.test(cleanQuery)) {
+    return { cid: cleanQuery, name: `PubChem CID ${cleanQuery}` };
+  }
+
+  const searchUrl = `${PUBCHEM_BASE}/compound/name/${encodeURIComponent(cleanQuery)}/cids/JSON`;
+  const data = await fetchJSON(searchUrl);
+  const cids = data?.IdentifierList?.CID || [];
+
+  if (!cids.length) {
+    throw new Error(`No PubChem compound record was found for “${cleanQuery}”.`);
+  }
+
+  return { cid: String(cids[0]), name: cleanQuery };
+}
+
+async function loadCompound(query) {
+  showStatus("Retrieving molecular data from PubChem...");
+  resultWrapper.classList.add("hidden");
+
+  try {
+    const resolved = await resolveCompound(query);
+    const cid = resolved.cid;
+
+    const propertyUrl = `${PUBCHEM_BASE}/compound/cid/${cid}/property/${PROPERTIES}/JSON`;
+    const propertyData = await fetchJSON(propertyUrl);
+    const props = propertyData?.PropertyTable?.Properties?.[0] || {};
+
+    currentCompound = {
+      cid,
+      name: props.IUPACName || resolved.name,
+      ...props
+    };
+
+    renderCompound();
+    await load3DModel(cid);
+    hideStatus();
+    resultWrapper.classList.remove("hidden");
+    document.getElementById("search-section").scrollIntoView({ behavior: "smooth" });
+  } catch (error) {
+    showStatus(error.message || "Unable to retrieve compound information.", true);
+  }
+}
+
+function propertyItem(label, value) {
+  if (value === undefined || value === null || value === "") return "";
+  return `
+    <div class="property">
+      <span>${label}</span>
+      <strong>${escapeHTML(String(value))}</strong>
+    </div>
+  `;
+}
+
+function escapeHTML(value) {
+  const div = document.createElement("div");
+  div.textContent = value;
+  return div.innerHTML;
+}
+
+function renderCompound() {
+  const c = currentCompound;
+  const displayName = c.IUPACName || c.name || `Compound CID ${c.cid}`;
+
+  titleEl.textContent = displayName;
+  iupacEl.textContent = c.IUPACName ? `IUPAC name: ${c.IUPACName}` : "PubChem compound record";
+  pubchemLink.href = `https://pubchem.ncbi.nlm.nih.gov/compound/${c.cid}`;
+
+  structureImage.src = `${PUBCHEM_BASE}/compound/cid/${c.cid}/PNG?image_size=500x500`;
+  structureImage.alt = `2D structure of ${displayName}`;
+
+  propertiesGrid.innerHTML = [
+    propertyItem("Molecular formula", c.MolecularFormula),
+    propertyItem("Molecular weight", c.MolecularWeight ? `${c.MolecularWeight} g/mol` : ""),
+    propertyItem("Exact mass", c.ExactMass),
+    propertyItem("Monoisotopic mass", c.MonoisotopicMass),
+    propertyItem("XLogP", c.XLogP),
+    propertyItem("TPSA", c.TPSA ? `${c.TPSA} Å²` : ""),
+    propertyItem("H-bond donors", c.HBondDonorCount),
+    propertyItem("H-bond acceptors", c.HBondAcceptorCount),
+    propertyItem("Rotatable bonds", c.RotatableBondCount),
+    propertyItem("Heavy atoms", c.HeavyAtomCount),
+    propertyItem("Formal charge", c.Charge),
+    propertyItem("Complexity", c.Complexity)
+  ].join("");
+
+  identifiersBox.innerHTML = `
+    <div class="identifier-item">
+      <strong>PubChem CID</strong>
+      <span class="code">${escapeHTML(c.cid)}</span>
+    </div>
+    <div class="identifier-item">
+      <strong>Connectivity SMILES</strong>
+      <span class="code">${escapeHTML(c.ConnectivitySMILES || "Not available")}</span>
+    </div>
+    <div class="identifier-item">
+      <strong>Isomeric SMILES</strong>
+      <span class="code">${escapeHTML(c.SMILES || "Not available")}</span>
+    </div>
+    <div class="identifier-item">
+      <strong>InChI</strong>
+      <span class="code">${escapeHTML(c.InChI || "Not available")}</span>
+    </div>
+    <div class="identifier-item">
+      <strong>InChIKey</strong>
+      <span class="code">${escapeHTML(c.InChIKey || "Not available")}</span>
+    </div>
+  `;
+
+  const smiles = c.SMILES || c.ConnectivitySMILES || "";
+  const insights = [];
+
+  if (c.MolecularWeight) {
+    insights.push(
+      `This molecule has a molecular weight of approximately <strong>${c.MolecularWeight} g/mol</strong>. Molecular mass affects diffusion, transport and formulation behaviour.`
+    );
+  }
+
+  if (c.XLogP !== undefined) {
+    const lipophilicity =
+      c.XLogP < 0 ? "relatively hydrophilic" :
+      c.XLogP < 3 ? "moderately lipophilic" : "relatively lipophilic";
+
+    insights.push(
+      `Its XLogP value is <strong>${c.XLogP}</strong>, suggesting the molecule is ${lipophilicity}. This helps indicate likely solubility and membrane permeability trends.`
+    );
+  }
+
+  if (c.TPSA !== undefined) {
+    insights.push(
+      `The topological polar surface area is <strong>${c.TPSA} Å²</strong>. Polar surface area is often used when estimating absorption and membrane crossing behaviour.`
+    );
+  }
+
+  if (c.HBondDonorCount !== undefined || c.HBondAcceptorCount !== undefined) {
+    insights.push(
+      `It has <strong>${c.HBondDonorCount ?? "—"}</strong> hydrogen-bond donor sites and <strong>${c.HBondAcceptorCount ?? "—"}</strong> acceptor sites, which can influence solubility and molecular recognition.`
+    );
+  }
+
+  if (c.RotatableBondCount !== undefined) {
+    insights.push(
+      `The structure contains <strong>${c.RotatableBondCount}</strong> rotatable bonds, affecting conformational flexibility.`
+    );
+  }
+
+  const functionalHints = FUNCTIONAL_GROUP_HINTS
+    .filter((item) => item.test.test(smiles))
+    .map((item) => item.label);
+
+  if (functionalHints.length) {
+    insights.push(`<strong>Structural observations:</strong> ${functionalHints.join("; ")}.`);
+  }
+
+  insightsBox.innerHTML = insights
+    .map((text) => `<div class="insight-item">${text}</div>`)
+    .join("");
+
+  const matchedUses = USE_LIBRARY.find((entry) => entry.match.test(displayName));
+  const useItems = matchedUses
+    ? matchedUses.uses
+    : [
+        "Chemical research and laboratory analysis",
+        "Industrial synthesis or formulation, depending on its properties",
+        "Education, structure-activity study and molecular modelling"
+      ];
+
+  usesBox.innerHTML = useItems
+    .map((use) => `<div class="use-item">${use}</div>`)
+    .join("");
+}
+
+async function load3DModel(cid) {
+  if (viewer) {
+    viewer.clear();
+  } else {
+    viewer = $3Dmol.createViewer(viewerElement, {
+      backgroundColor: "#050a13"
+    });
+  }
+
+  viewerElement.innerHTML = "";
+
+  try {
+    const sdfUrl = `${PUBCHEM_BASE}/compound/cid/${cid}/SDF?record_type=3d`;
+    const response = await fetch(sdfUrl);
+    if (!response.ok) throw new Error("3D conformer unavailable");
+
+    const sdf = await response.text();
+    viewer.addModel(sdf, "sdf");
+    viewer.setStyle({}, {
+      stick: { radius: 0.16 },
+      sphere: { scale: 0.28 }
+    });
+    viewer.zoomTo();
+    viewer.spin(true);
+    viewer.render();
+    spinEnabled = true;
+  } catch (error) {
+    viewerElement.innerHTML = `
+      <div style="height:100%;display:grid;place-items:center;color:#93a6b8;font-size:0.9rem;text-align:center;padding:20px;">
+        A 3D conformer is not available for this record.<br>
+        The 2D structure and chemical properties are still shown.
+      </div>
+    `;
+  }
+}
+
+document.getElementById("spin-toggle").addEventListener("click", () => {
+  if (!viewer) return;
+  spinEnabled = !spinEnabled;
+  viewer.spin(spinEnabled);
+});
+
+document.getElementById("reset-view").addEventListener("click", () => {
+  if (!viewer) return;
+  viewer.zoomTo();
+  viewer.render();
+});
+
+searchForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  loadCompound(searchInput.value);
+});
+
+document.querySelectorAll(".quick-searches button").forEach((button) => {
+  button.addEventListener("click", () => {
+    searchInput.value = button.dataset.query;
+    loadCompound(button.dataset.query);
+  });
+});
+
+/* Quiz */
+let quizIndex = 0;
+let quizScore = 0;
+
+const quizQuestion = document.getElementById("quiz-question");
+const quizOptions = document.getElementById("quiz-options");
+const quizFeedback = document.getElementById("quiz-feedback");
+const quizProgress = document.getElementById("quiz-progress");
+const quizNext = document.getElementById("quiz-next");
+const quizRestart = document.getElementById("quiz-restart");
+
+function renderQuiz() {
+  const item = QUIZ_QUESTIONS[quizIndex];
+  quizProgress.textContent = `Question ${quizIndex + 1} of ${QUIZ_QUESTIONS.length} • Score: ${quizScore}`;
+  quizQuestion.textContent = item.question;
+  quizFeedback.textContent = "";
+  quizFeedback.className = "quiz-feedback";
+  quizNext.classList.add("hidden");
+
+  quizOptions.innerHTML = "";
+
+  item.options.forEach((option, index) => {
+    const button = document.createElement("button");
+    button.textContent = option;
+    button.addEventListener("click", () => selectAnswer(index, button));
+    quizOptions.appendChild(button);
+  });
+}
+
+function selectAnswer(index, button) {
+  const item = QUIZ_QUESTIONS[quizIndex];
+  const buttons = [...quizOptions.children];
+
+  buttons.forEach((btn) => (btn.disabled = true));
+
+  if (index === item.answer) {
+    quizScore += 1;
+    button.classList.add("correct");
+    quizFeedback.textContent = "Correct! " + item.explanation;
+    quizFeedback.classList.add("correct");
+  } else {
+    button.classList.add("wrong");
+    buttons[item.answer].classList.add("correct");
+    quizFeedback.textContent = "Not quite. " + item.explanation;
+    quizFeedback.classList.add("wrong");
+  }
+
+  if (quizIndex < QUIZ_QUESTIONS.length - 1) {
+    quizNext.classList.remove("hidden");
+  } else {
+    quizRestart.classList.remove("hidden");
+    quizFeedback.textContent += ` Final score: ${quizScore}/${QUIZ_QUESTIONS.length}.`;
+  }
+}
+
+quizNext.addEventListener("click", () => {
+  quizIndex += 1;
+  renderQuiz();
+});
+
+quizRestart.addEventListener("click", () => {
+  quizIndex = 0;
+  quizScore = 0;
+  quizRestart.classList.add("hidden");
+  renderQuiz();
+});
+
+/* Assistant */
+const chatWindow = document.getElementById("chat-window");
+const chatForm = document.getElementById("chat-form");
+const chatInput = document.getElementById("chat-input");
+
+function addChatMessage(text, role) {
+  const message = document.createElement("div");
+  message.className = `chat-message ${role}`;
+  message.innerHTML = `<strong>${role === "user" ? "You" : "Vimo"}:</strong> ${text}`;
+  chatWindow.appendChild(message);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function localAssistantAnswer(question) {
+  const q = question.toLowerCase();
+  const c = currentCompound;
+
+  if (!c) {
+    return "Search a compound first, then I can explain its formula, mass, SMILES, polarity, 3D structure and possible uses.";
+  }
+
+  if (q.includes("smiles")) {
+    return `SMILES is a compact text notation for molecular structure. For <strong>${escapeHTML(c.name)}</strong>, the isomeric SMILES is: <span class="code">${escapeHTML(c.SMILES || c.ConnectivitySMILES || "Not available")}</span>`;
+  }
+
+  if (q.includes("mass") || q.includes("weight")) {
+    return `<strong>${escapeHTML(c.name)}</strong> has a molecular weight of approximately <strong>${c.MolecularWeight || "unavailable"} g/mol</strong>. Molecular mass is the sum of the atomic masses of its atoms.`;
+  }
+
+  if (q.includes("3d") || q.includes("structure")) {
+    return `You can rotate the 3D model using your mouse and zoom with the scroll wheel. The model is generated from PubChem’s 3D conformer data, when available.`;
+  }
+
+  if (q.includes("use") || q.includes("industry") || q.includes("application")) {
+    return `Possible applications depend on the compound’s properties and context. For <strong>${escapeHTML(c.name)}</strong>, review the “Industrial & Practical Uses” panel. Always follow approved safety and regulatory guidance before practical use.`;
+  }
+
+  if (q.includes("polar") || q.includes("soluble") || q.includes("water")) {
+    const xlogp = c.XLogP;
+    if (xlogp !== undefined) {
+      return `With an XLogP of <strong>${xlogp}</strong>, this molecule is ${
+        xlogp < 0 ? "relatively hydrophilic" : xlogp < 3 ? "moderately balanced in polarity" : "relatively lipophilic"
+      }. Hydrogen-bonding and molecular shape also affect solubility.`;
+    }
+    return `Solubility depends on polarity, hydrogen bonding, molecular size and pH. Check the XLogP, TPSA and hydrogen-bond values shown above.`;
+  }
+
+  return `Here is a concise overview of <strong>${escapeHTML(c.name)}</strong>: its formula is <strong>${escapeHTML(c.MolecularFormula || "unavailable")}</strong>, molecular weight is <strong>${c.MolecularWeight || "unavailable"} g/mol</strong>, and its SMILES is <span class="code">${escapeHTML(c.SMILES || c.ConnectivitySMILES || "Not available")}</span>. Its XLogP is ${c.XLogP ?? "unavailable"}, TPSA is ${c.TPSA ?? "unavailable"} Å², and it has ${c.HBondDonorCount ?? "unknown"} hydrogen-bond donors and ${c.HBondAcceptorCount ?? "unknown"} acceptors.`;
+}
+
+chatForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const question = chatInput.value.trim();
+  if (!question) return;
+
+  addChatMessage(escapeHTML(question), "user");
+  chatInput.value = "";
+
+  setTimeout(() => {
+    addChatMessage(localAssistantAnswer(question), "ai");
+  }, 350);
+});
+
+/* Navigation highlight */
+const navLinks = document.querySelectorAll(".nav-link");
+const sections = [...document.querySelectorAll("section")];
+
+window.addEventListener("scroll", () => {
+  const current = sections.find((section) => {
+    const rect = section.getBoundingClientRect();
+    return rect.top <= 140 && rect.bottom > 140;
+  });
+
+  navLinks.forEach((link) => {
+    link.classList.toggle("active", link.getAttribute("href") === `#${current?.id}`);
+  });
+});
+
+renderQuiz();
